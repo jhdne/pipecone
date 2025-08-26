@@ -107,18 +107,12 @@ def main():
 
     all_ucids = fetch_ucids()
     if not all_ucids: return
-    
-    # 为了在 GitHub Actions 上高效运行，可以先处理一个小子集进行测试
-    # 正式运行时请使用 all_ucids
-    test_ucids = all_ucids[:100] # 例如，先测试100个
-    print(f"🔍 本次处理 {len(test_ucids)} 个代币 (测试模式)")
-    run_sync_process(test_ucids)
 
-    # print(f"🔍 本次处理 {len(all_ucids)} 个代币")
-    # run_sync_process(all_ucids)
+    print(f"🔍 本次处理 {len(all_ucids)} 个代币 (全量同步)")
+    run_sync_process(all_ucids)
 
     print("\n保存 UCID 快照...")
-    save_ucids_snapshot(test_ucids)
+    save_ucids_snapshot(all_ucids)
 
     print("\n🎉 全量同步流程执行完毕！")
 

@@ -59,52 +59,84 @@ def _fetch_in_batches(ucids: List[int], endpoint_key: str, params_extra: Dict = 
 
 
 def fetch_ucids() -> List[int]:
-    """获取所有代币的 UCID 列表 (已修改为只获取前 100 个)"""
-    print("ℹ️  正在获取前 100 个代币的 UCID (测试模式)...")
-    try:
-        # 直接发起一次 API 请求，将 limit 参数设置为 100
-        response = requests.get(
-            url=f"{CMC_CONFIG['base_url']}{CMC_CONFIG['endpoints']['map']}",
-            headers=CMC_CONFIG["headers"],
-            params={"limit": 100}, # <-- 关键修改在这里
-            timeout=15
-        )
-        response.raise_for_status()
+    """获取所有代币的 UCID 列表 - 使用分页获取全部数据"""
+    print("ℹ️  正在获取所有代币的 UCID (分页获取全部数据)...")
+
+    all_ucids = []
+    start = 1  # CoinMarketCap API 从1开始计数
+    limit = 5000  # 每页最大数量
+    page = 1
+
+    while True:
+        print(f"📄 正在获取第 {page} 页数据 (从第 {start} 个代币开始)...")
 
         try:
-            data = response.json()
-        except ValueError as e:
-            print(f"❌ JSON 解析失败: {e}")
-            return []
+            response = requests.get(
+                url=f"{CMC_CONFIG['base_url']}{CMC_CONFIG['endpoints']['map']}",
+                headers=CMC_CONFIG["headers"],
+                params={
+                    "start": start,
+                    "limit": limit
+                },
+                timeout=30
+            )
+            response.raise_for_status()
 
-        # 安全地检查响应结构
-        if not isinstance(data, dict):
-            print(f"❌ 响应格式错误: 期望字典但得到 {type(data)}")
-            return []
+            try:
+                data = response.json()
+            except ValueError as e:
+                print(f"❌ 第 {page} 页 JSON 解析失败: {e}")
+                break
 
-        status = data.get("status", {})
-        if isinstance(status, dict) and status.get("error_code") == 0 and data.get("data"):
-            # 从返回的数据中提取 id 列表
-            ucids = []
-            if isinstance(data["data"], list):
-                for coin in data["data"]:
-                    if isinstance(coin, dict) and "id" in coin:
-                        ucids.append(coin["id"])
-                    else:
-                        print(f"⚠️ 跳过无效的代币数据: {coin}")
-            else:
-                print(f"❌ 数据格式错误，期望列表但得到: {type(data['data'])}")
-                return []
-            print(f"✅ UCID 拉取完成，共 {len(ucids)} 个代币")
-            return ucids
-        else:
-            error_msg = status.get("error_message", "未知错误") if isinstance(status, dict) else "状态格式错误"
-            print(f"❌ 获取 UCID 错误：{error_msg}")
-            return []
+            # 安全地检查响应结构
+            if not isinstance(data, dict):
+                print(f"❌ 第 {page} 页响应格式错误: 期望字典但得到 {type(data)}")
+                break
 
-    except requests.exceptions.RequestException as e:
-        print(f"❌ UCID 请求失败：{e}")
-        return []
+            status = data.get("status", {})
+            if not (isinstance(status, dict) and status.get("error_code") == 0):
+                error_msg = status.get("error_message", "未知错误") if isinstance(status, dict) else "状态格式错误"
+                print(f"❌ 第 {page} 页 API 错误：{error_msg}")
+                break
+
+            page_data = data.get("data")
+            if not page_data or not isinstance(page_data, list):
+                print(f"⚠️ 第 {page} 页无数据或数据格式错误")
+                break
+
+            # 提取当前页的 UCID
+            page_ucids = []
+            for coin in page_data:
+                if isinstance(coin, dict) and "id" in coin:
+                    page_ucids.append(coin["id"])
+                else:
+                    print(f"⚠️ 跳过无效的代币数据: {coin}")
+
+            if not page_ucids:
+                print(f"⚠️ 第 {page} 页没有有效的代币数据，停止获取")
+                break
+
+            all_ucids.extend(page_ucids)
+            print(f"✅ 第 {page} 页获取成功，本页 {len(page_ucids)} 个代币，累计 {len(all_ucids)} 个代币")
+
+            # 如果本页数据少于 limit，说明已经是最后一页
+            if len(page_ucids) < limit:
+                print(f"📄 已到达最后一页 (第 {page} 页)")
+                break
+
+            # 准备下一页
+            start += limit
+            page += 1
+
+            # 添加请求间隔，避免API限流
+            time.sleep(REQUEST_DELAY)
+
+        except requests.exceptions.RequestException as e:
+            print(f"❌ 第 {page} 页请求失败：{e}")
+            break
+
+    print(f"🎉 UCID 全量获取完成！总共获取 {len(all_ucids)} 个代币")
+    return all_ucids
 
 def fetch_coin_details(ucids: List[int]) -> Dict[str, Any]:
     """批量获取代币详情"""
