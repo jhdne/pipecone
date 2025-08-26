@@ -3,11 +3,47 @@ from config import METADATA_FIELDS
 from cmc_fetcher import extract_social_data, extract_urls
 
 def _safe_get_contract_address(detail: Dict[str, Any]) -> str:
-    """安全地获取合约地址"""
+    """安全地获取合约地址，优先使用 contract_address 字段"""
+    # 优先使用 contract_address 字段（更完整的合约信息）
+    contract_addresses = detail.get('contract_address', [])
+    if isinstance(contract_addresses, list) and contract_addresses:
+        # 获取第一个合约地址（通常是主要的合约地址）
+        first_contract = contract_addresses[0]
+        if isinstance(first_contract, dict):
+            contract_addr = first_contract.get('contract_address')
+            if contract_addr:
+                return contract_addr
+
+    # 回退到传统的 platform.token_address 方式
     platform = detail.get('platform')
     if platform and isinstance(platform, dict):
-        return platform.get('token_address', '未知')
+        token_address = platform.get('token_address')
+        if token_address:
+            return token_address
+
     return '未知'
+
+def _get_all_contract_addresses(detail: Dict[str, Any]) -> List[str]:
+    """获取所有合约地址（支持多链）"""
+    all_addresses = []
+
+    # 从 contract_address 字段获取所有地址
+    contract_addresses = detail.get('contract_address', [])
+    if isinstance(contract_addresses, list):
+        for contract in contract_addresses:
+            if isinstance(contract, dict):
+                addr = contract.get('contract_address')
+                if addr and addr not in all_addresses:
+                    all_addresses.append(addr)
+
+    # 从 platform.token_address 获取地址（如果不在列表中）
+    platform = detail.get('platform')
+    if platform and isinstance(platform, dict):
+        token_address = platform.get('token_address')
+        if token_address and token_address not in all_addresses:
+            all_addresses.append(token_address)
+
+    return all_addresses
 
 def process_data(ucids: List[int], coin_details: Dict[str, Any], market_data: Dict[str, Any]) -> List[Dict[str, Any]]:
     """整合数据，生成待向量化文本和元数据"""
@@ -43,11 +79,20 @@ def process_data(ucids: List[int], coin_details: Dict[str, Any], market_data: Di
         else:
             tags_text = str(tags)
 
+        # 获取合约地址信息
+        primary_contract = _safe_get_contract_address(detail)
+        all_contracts = _get_all_contract_addresses(detail)
+
+        # 构建合约地址信息文本
+        contract_info = primary_contract
+        if len(all_contracts) > 1:
+            contract_info += f" (共{len(all_contracts)}个合约地址)"
+
         token_info = (
             f"代币基础信息：名称：{detail.get('name', '未知')} ({detail.get('symbol', '未知')}), "
             f"分类：{detail.get('category', '未知')}, 标签：{tags_text}. "
             f"简介：{description_text}. "
-            f"合约地址：{_safe_get_contract_address(detail)}. "
+            f"合约地址：{contract_info}. "
             f"供应量：流通 {market.get('circulating_supply', '未知')}, 总 {market.get('total_supply', '未知')}. "
             f"市场数据：FDV {usd_quote.get('fully_diluted_valuation', '未知')} 美元. "
             f"官方链接：官网 {url_data['website']}, 白皮书 {url_data['whitepaper']}."
@@ -58,7 +103,8 @@ def process_data(ucids: List[int], coin_details: Dict[str, Any], market_data: Di
             "logo": detail.get("logo"),
             "name": detail.get("name"),
             "symbol": detail.get("symbol"),
-            "contracts": _safe_get_contract_address(detail),
+            "contract_address": primary_contract,  # 主要合约地址
+            "all_contracts": all_contracts if len(all_contracts) > 1 else None,  # 所有合约地址（多链支持）
             "circulating_supply": market.get("circulating_supply"),
             "total_supply": market.get("total_supply"),
             "max_supply": market.get("max_supply"),
