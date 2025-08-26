@@ -3,6 +3,29 @@ import time
 from typing import List, Dict, Any
 from config import CMC_CONFIG, BATCH_SIZE, REQUEST_DELAY
 
+def _make_request_with_retry(url: str, headers: Dict, params: Dict, max_retries: int = 3) -> requests.Response:
+    """带重试机制的请求函数"""
+    for attempt in range(max_retries):
+        try:
+            response = requests.get(url=url, headers=headers, params=params, timeout=30)
+            response.raise_for_status()
+            return response
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 429:  # Too Many Requests
+                wait_time = (attempt + 1) * 10  # 递增等待时间：10s, 20s, 30s
+                print(f"⚠️ API限流，等待 {wait_time} 秒后重试 (尝试 {attempt + 1}/{max_retries})...")
+                time.sleep(wait_time)
+                if attempt == max_retries - 1:
+                    raise  # 最后一次尝试失败，抛出异常
+            else:
+                raise  # 其他HTTP错误直接抛出
+        except requests.exceptions.RequestException as e:
+            if attempt == max_retries - 1:
+                raise  # 最后一次尝试失败，抛出异常
+            wait_time = (attempt + 1) * 5  # 网络错误等待时间较短
+            print(f"⚠️ 网络错误，等待 {wait_time} 秒后重试 (尝试 {attempt + 1}/{max_retries})...")
+            time.sleep(wait_time)
+
 def _fetch_in_batches(ucids: List[int], endpoint_key: str, params_extra: Dict = None) -> Dict[str, Any]:
     """通用批量获取函数"""
     data_map: Dict[str, Any] = {}
@@ -18,13 +41,11 @@ def _fetch_in_batches(ucids: List[int], endpoint_key: str, params_extra: Dict = 
             params.update(params_extra)
 
         try:
-            response = requests.get(
+            response = _make_request_with_retry(
                 url=f"{CMC_CONFIG['base_url']}{CMC_CONFIG['endpoints'][endpoint_key]}",
                 headers=CMC_CONFIG["headers"],
-                params=params,
-                timeout=15
+                params=params
             )
-            response.raise_for_status()
 
             try:
                 data = response.json()
@@ -71,16 +92,14 @@ def fetch_ucids() -> List[int]:
         print(f"📄 正在获取第 {page} 页数据 (从第 {start} 个代币开始)...")
 
         try:
-            response = requests.get(
+            response = _make_request_with_retry(
                 url=f"{CMC_CONFIG['base_url']}{CMC_CONFIG['endpoints']['map']}",
                 headers=CMC_CONFIG["headers"],
                 params={
                     "start": start,
                     "limit": limit
-                },
-                timeout=30
+                }
             )
-            response.raise_for_status()
 
             try:
                 data = response.json()

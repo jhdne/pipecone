@@ -4,6 +4,7 @@ from cmc_fetcher import fetch_ucids, fetch_coin_details, fetch_market_data
 from data_processor import process_data
 from pinecone_manager import init_pinecone_client, get_or_create_index, upsert_data_to_pinecone
 from utils import save_ucids_snapshot
+import time
 
 def embed_texts_with_pinecone(pc_client, texts: List[str]) -> List[List[float]]:
     """
@@ -28,12 +29,32 @@ def embed_texts_with_pinecone(pc_client, texts: List[str]) -> List[List[float]]:
         print(f"📦 处理第 {batch_num}/{total_batches} 批，包含 {len(batch_texts)} 条文本...")
 
         try:
-            # 调用 API 生成 embedding
-            response = pc_client.inference.embed(
-                model="llama-text-embed-v2",
-                inputs=batch_texts,
-                parameters={"input_type": "passage", "truncate": "END"}
-            )
+            # 调用 API 生成 embedding，添加重试机制
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    response = pc_client.inference.embed(
+                        model="llama-text-embed-v2",
+                        inputs=batch_texts,
+                        parameters={"input_type": "passage", "truncate": "END"}
+                    )
+                    break  # 成功则跳出重试循环
+                except Exception as e:
+                    error_str = str(e)
+                    is_rate_limit = ("429" in error_str or
+                                   "Too Many Requests" in error_str or
+                                   "RESOURCE_EXHAUSTED" in error_str or
+                                   "max embedding Tokens per minute" in error_str)
+
+                    if is_rate_limit:
+                        if attempt < max_retries - 1:
+                            wait_time = (attempt + 1) * 60  # 递增等待：60s, 120s, 180s
+                            print(f"⚠️ Pinecone API限流，等待 {wait_time} 秒后重试 (尝试 {attempt + 1}/{max_retries})...")
+                            time.sleep(wait_time)
+                        else:
+                            raise  # 最后一次尝试失败
+                    else:
+                        raise  # 其他错误直接抛出
         
             # 从响应中提取向量列表
             if hasattr(response, 'data') and response.data:
@@ -53,6 +74,11 @@ def embed_texts_with_pinecone(pc_client, texts: List[str]) -> List[List[float]]:
         except Exception as e:
             print(f"❌ 第 {batch_num} 批调用 Pinecone Inference API 失败: {e}")
             return []
+
+        # 在批次之间添加延迟，避免API限流
+        if batch_num < total_batches:  # 不是最后一批
+            print(f"⏳ 等待 10 秒后处理下一批...")
+            time.sleep(10)
 
     print(f"🎉 所有批次完成！总共获取 {len(all_embeddings)} 条向量")
     return all_embeddings
