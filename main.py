@@ -8,37 +8,54 @@ from utils import save_ucids_snapshot
 def embed_texts_with_pinecone(pc_client, texts: List[str]) -> List[List[float]]:
     """
     使用 Pinecone Inference API 对文本进行向量化。
+    支持批量处理，每批最多96条（API限制）。
     """
     if not texts:
         return []
-    
+
+    # Pinecone llama-text-embed-v2 模型的输入限制是96条
+    BATCH_SIZE = 96
+    all_embeddings = []
+
     print(f"🚀 正在调用 Pinecone Inference API 对 {len(texts)} 条文本进行向量化...")
-    try:
-        # 调用 API 生成 embedding，就像您提供的那样
-        response = pc_client.inference.embed(
-            model="llama-text-embed-v2",
-            inputs=texts,
-            parameters={"input_type": "passage", "truncate": "END"}
-        )
+
+    # 分批处理
+    for i in range(0, len(texts), BATCH_SIZE):
+        batch_texts = texts[i:i + BATCH_SIZE]
+        batch_num = i // BATCH_SIZE + 1
+        total_batches = (len(texts) + BATCH_SIZE - 1) // BATCH_SIZE
+
+        print(f"📦 处理第 {batch_num}/{total_batches} 批，包含 {len(batch_texts)} 条文本...")
+
+        try:
+            # 调用 API 生成 embedding
+            response = pc_client.inference.embed(
+                model="llama-text-embed-v2",
+                inputs=batch_texts,
+                parameters={"input_type": "passage", "truncate": "END"}
+            )
         
-        # 从响应中提取向量列表
-        if hasattr(response, 'data') and response.data:
-            embeddings = []
-            for item in response.data:
-                if hasattr(item, 'values'):
-                    embeddings.append(item.values)
-                else:
-                    print(f"⚠️ 响应项缺少 values 属性: {item}")
-                    return []
-            print(f"✅ 成功获取 {len(embeddings)} 条向量。")
-            return embeddings
-        else:
-            print("❌ 响应中没有数据")
+            # 从响应中提取向量列表
+            if hasattr(response, 'data') and response.data:
+                batch_embeddings = []
+                for item in response.data:
+                    if hasattr(item, 'values'):
+                        batch_embeddings.append(item.values)
+                    else:
+                        print(f"⚠️ 响应项缺少 values 属性: {item}")
+                        return []
+                all_embeddings.extend(batch_embeddings)
+                print(f"✅ 第 {batch_num} 批成功获取 {len(batch_embeddings)} 条向量")
+            else:
+                print(f"❌ 第 {batch_num} 批响应中没有数据")
+                return []
+
+        except Exception as e:
+            print(f"❌ 第 {batch_num} 批调用 Pinecone Inference API 失败: {e}")
             return []
-        
-    except Exception as e:
-        print(f"❌ 调用 Pinecone Inference API 失败: {e}")
-        return []
+
+    print(f"🎉 所有批次完成！总共获取 {len(all_embeddings)} 条向量")
+    return all_embeddings
 
 def run_sync_process(ucids: List[int]):
     """执行同步的核心流程"""
