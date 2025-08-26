@@ -26,7 +26,13 @@ def process_data(ucids: List[int], coin_details: Dict[str, Any], market_data: Di
 
         # 安全地处理描述字段
         description = detail.get('description', '无简介')
-        description_text = description[:200] if description else '无简介'
+        if description is None:
+            description_text = '无简介'
+        elif isinstance(description, str):
+            description_text = description[:200] if description else '无简介'
+        else:
+            # 将非字符串类型转换为字符串后截取
+            description_text = str(description)[:200]
 
         # 安全地处理标签字段
         tags = detail.get('tags', [])
@@ -59,12 +65,26 @@ def process_data(ucids: List[int], coin_details: Dict[str, Any], market_data: Di
             "category": detail.get("category"),
             "telegram_members": social_data.get("telegram_members"),
             "twitter_followers": social_data.get("twitter_followers"),
-            "urls": url_data,
+            # 将 URL 字典展开为单独的字段，符合 Pinecone 元数据要求
+            "website": url_data.get("website"),
+            "whitepaper": url_data.get("whitepaper"),
+            "twitter_url": url_data.get("twitter"),
             "tags": tags_text,
             "description": detail.get("description"),
             "fdv": usd_quote.get("fully_diluted_valuation"),
         }
-        metadata_cleaned = {k: v for k, v in metadata.items() if v is not None and v != ''}
+        # 清理元数据，确保符合 Pinecone 要求（字符串、数字、布尔值或字符串列表）
+        metadata_cleaned = {}
+        for k, v in metadata.items():
+            if v is not None and v != '':
+                # 确保所有值都是 Pinecone 支持的类型
+                if isinstance(v, (str, int, float, bool)):
+                    metadata_cleaned[k] = v
+                elif isinstance(v, list) and all(isinstance(item, str) for item in v):
+                    metadata_cleaned[k] = v
+                else:
+                    # 将其他类型转换为字符串
+                    metadata_cleaned[k] = str(v)
 
         processed_list.append({
             "id": f"cmc-{ucid}",
