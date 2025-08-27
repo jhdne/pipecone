@@ -7,20 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { ResearchReport } from './ResearchReport';
 import { Search, ArrowLeft, ExternalLink, TrendingUp, DollarSign, ChevronDown, ChevronUp, FileText, Twitter, BarChart3, Heart } from 'lucide-react';
 import { motion } from 'motion/react';
-
-interface TokenResult {
-  id: string;
-  rank: number;
-  symbol: string;
-  name: string;
-  description: string;
-  circulatingSupply: string;
-  totalSupply: string;
-  logo: string;
-  whitepaperUrl: string;
-  twitterUrl: string;
-  website: string;
-}
+import { TokenResult } from '../services/api';
 
 interface SearchResultsProps {
   results: TokenResult[];

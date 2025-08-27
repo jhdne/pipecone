@@ -10,20 +10,7 @@ import { useSearch } from './hooks/useSearch';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from './components/ui/button';
 import { User, LogOut, Heart, History } from 'lucide-react';
-
-interface TokenResult {
-  id: string;
-  rank: number;
-  symbol: string;
-  name: string;
-  description: string;
-  circulatingSupply: string;
-  totalSupply: string;
-  logo: string;
-  whitepaperUrl: string;
-  twitterUrl: string;
-  website: string;
-}
+import { TokenResult } from './services/api';
 
 function AppContent() {
   const { user, isAuthenticated, logout } = useAuthProvider();

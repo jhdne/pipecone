@@ -5,21 +5,7 @@ import { Badge } from './ui/badge';
 import { Card } from './ui/card';
 import { TrendingUp, AlertTriangle, CheckCircle, X, BarChart3, Loader2 } from 'lucide-react';
 import { motion } from 'motion/react';
-import { apiService } from '../services/api';
-
-interface TokenResult {
-  id: string;
-  rank: number;
-  symbol: string;
-  name: string;
-  description: string;
-  circulatingSupply: string;
-  totalSupply: string;
-  logo: string;
-  whitepaperUrl: string;
-  twitterUrl: string;
-  website: string;
-}
+import { apiService, TokenResult } from '../services/api';
 
 interface ResearchReportProps {
   token: TokenResult | null;
